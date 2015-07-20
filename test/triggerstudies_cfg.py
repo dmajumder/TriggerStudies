@@ -7,7 +7,7 @@ process.load("FWCore.MessageService.MessageLogger_cfi")
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_condDBv2_cff')
 process.GlobalTag.globaltag = "MCRUN2_74_V9" 
 
-process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(-1) )
+process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(-5000) )
 
 process.source = cms.Source("PoolSource",
     fileNames = cms.untracked.vstring(
@@ -28,7 +28,7 @@ process.hltPFHT800emu0 = cms.EDFilter("MiniAODTrigEmu",
     bits = cms.InputTag("TriggerResults","","MYHLT"),
     objects = cms.InputTag("selectedPatTrigger"),
     origpath = cms.string("HLT_AK8PFHT500_TrimR0p1PT0p03Mass50_BTagCSV0p45_v2"),# original path to use as a base
-    newthresh = cms.double(750),# new threshold to use
+    newthresh = cms.double(600),# new threshold to use
     triggertype = cms.int32(89),# look at https://github.com/cms-sw/cmssw/blob/CMSSW_7_4_X/DataFormats/HLTReco/interface/TriggerTypeDefs.h
     )
 
@@ -36,7 +36,7 @@ process.hltPFHT800emu1 = cms.EDFilter("MiniAODTrigEmu",
     bits = cms.InputTag("TriggerResults","","MYHLT"),
     objects = cms.InputTag("selectedPatTrigger"),
     origpath = cms.string("HLT_AK8PFHT500_TrimR0p1PT0p03Mass50_v2"),# original path to use as a base
-    newthresh = cms.double(750),# new threshold to use
+    newthresh = cms.double(650),# new threshold to use
     triggertype = cms.int32(89),# look at https://github.com/cms-sw/cmssw/blob/CMSSW_7_4_X/DataFormats/HLTReco/interface/TriggerTypeDefs.h
     )
 
@@ -55,17 +55,20 @@ process.trig = cms.EDAnalyzer('TriggerStudies',
     ak8jetLabel  = cms.InputTag('slimmedJetsAK8'),
     ak4jetLabel  = cms.InputTag('slimmedJets'),
     hltPaths = cms.vstring(
-        "HLT_AK8PFHT500_TrimR0p1PT0p03Mass50_v2", 
-        "HLT_AK8PFHT500_TrimR0p1PT0p03Mass50_BTagCSV0p45_v2", 
-        "HLT_AK8DiPFJet200_200_TrimMass30_BTagCSV0p45_v2", 
+      "HLT_PFHT800_v1", 
+      "HLT_AK8PFHT700_TrimR0p1PT0p03Mass50_v2", 
+      "HLT_AK8PFJet360_TrimMass30_v2", 
+      "HLT_AK8PFHT500_TrimR0p1PT0p03Mass50_v2", # threshold changed to 650 GeV 
+      "HLT_AK8PFHT500_TrimR0p1PT0p03Mass50_BTagCSV0p45_v2", # threshold changed to 600 GeV 
+      "HLT_AK8DiPFJet200_200_TrimMass30_BTagCSV0p45_v2", # threshold changed to 250 GeV 
       )
     )
 
 process.TFileService = cms.Service("TFileService",
-       fileName = cms.string(
-         "singleTprime_triggerStudies.root" 
-         )
-       )
+    fileName = cms.string(
+      "singleTprime_triggerStudies_20July2015.root" 
+      )
+    )
 
 process.p0 = cms.Path(process.hltPFHT800emu0*process.trig) 
 process.p1 = cms.Path(process.hltPFHT800emu1*process.trig) 

@@ -145,9 +145,14 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   //// Event selection variables
   double ptak8leading(0) ; 
   double ptak82nd(0) ;
-  double etaforwardmostak4(0) ; 
-  double htak4(0) ; 
   double ptak4bjetleading(0) ; 
+  double htak4(0) ; 
+
+  //// Event selection flags
+  bool ispassedLeadingAK8Pt(false) ; 
+  bool ispassed2ndAK8Pt(false) ; 
+  bool ispassedBTag(false) ; 
+  bool ispassedHT(false) ; 
 
   bool changedConfig = false;
 
@@ -164,7 +169,6 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   iEvent.getByToken(triggerPrescales_, triggerPrescales);
 
   //std::cout << " Trigger bit size = " << triggerBits->size() << std::endl ; 
-
   //for (unsigned int ii = 0, nn = triggerBits->size(); ii < nn; ++ii) {
   //  std::cout << ">>>>>>HLT bit " << ii << " path: " <<  (hltConfig_.triggerNames()[ii]) << " pass? " << triggerBits->accept(ii)  
   //    << std::endl ; 
@@ -188,12 +192,16 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
     double energy = jet.energy() ; 
     double mass = jet.mass() ; 
 
-    if (pt < 300 || abs(eta) > 2.5 || mass < 50) continue ; 
+    if (abs(eta) > 2.5 || mass < 50) continue ; 
 
-    double bdiscCSV =  jet.bDiscriminator("pfCombinedInclusiveSecondaryVertexV2BJetTags") ; 
-    double softdropmass = jet.userFloat("softDropMass") ; 
     double tau1 = jet.userFloat("userFloat('NjettinessAK8:tau1')") ; 
     double tau2 = jet.userFloat("userFloat('NjettinessAK8:tau2')") ; 
+
+    if (tau2/tau1 > 0.5) continue ; 
+
+    double softdropmass = jet.userFloat("softDropMass") ; 
+
+    double bdiscCSV =  jet.bDiscriminator("pfCombinedInclusiveSecondaryVertexV2BJetTags") ; 
 
     TLorentzVector jetp4 ; 
     jetp4.SetPtEtaPhiM(pt, eta, phi, mass) ; 
@@ -212,7 +220,7 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
     double pt = jet.pt() ; 
     double eta = jet.eta() ; 
 
-    if (pt < 50 || abs(eta) > 5) continue ; 
+    if (pt < 30 || abs(eta) > 5) continue ; 
 
     double rapidity = jet.rapidity() ; 
     double phi = jet.phi() ; 
@@ -231,36 +239,31 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
 
   }
 
-  //// Event selection NAK8jets >= 2
-  if ( goodAK8Jets.size() < 2 ) return ; 
+  //// Event pre-selection 
+  if ( goodAK8Jets.size() < 1 ) return ; 
+  if ( goodAK4Jets.size() < 4 ) return ; 
 
-  //// Event selection NAK4jets >= 5
-  if ( goodAK4Jets.size() < 5 ) return ; 
+  if (goodAK4Jets.size() > 0) std::sort(goodAK4Jets.begin(), goodAK4Jets.end(), Utilities::sortByPt<vlq::Jet>) ; 
+  if (goodAK8Jets.size() > 0) std::sort(goodAK8Jets.begin(), goodAK8Jets.end(), Utilities::sortByPt<vlq::Jet>) ; 
+  if (btaggedmediumAK4.size() > 0) std::sort(btaggedmediumAK4.begin(), btaggedmediumAK4.end(), Utilities::sortByPt<vlq::Jet>) ; 
 
-  //// Event selection Nbjets >= 3
-  if ( btaggedmediumAK4.size() < 1 || btaggedlooseAK4.size() < 3 ) return ; 
-
-  //// Forwardmost jet eta > 2.5
-  std::sort(goodAK4Jets.begin(), goodAK4Jets.end(), Utilities::sortByEta<vlq::Jet>) ; 
-  etaforwardmostak4 = abs((goodAK4Jets.at(0)).getEta()) ; 
-  if ( etaforwardmostak4 < 2.5 ) return ; 
-
-  std::sort(goodAK4Jets.begin(), goodAK4Jets.end(), Utilities::sortByPt<vlq::Jet>) ; 
-  std::sort(goodAK8Jets.begin(), goodAK8Jets.end(), Utilities::sortByPt<vlq::Jet>) ; 
-  std::sort(btaggedmediumAK4.begin(), btaggedmediumAK4.end(), Utilities::sortByPt<vlq::Jet>) ; 
-  
-  /// Event selection HT  
+  if (goodAK8Jets.size() > 0)  ptak8leading = (goodAK8Jets.at(0)).getPt() ; 
+  if (goodAK8Jets.size() > 1) ptak82nd = (goodAK8Jets.at(1)).getPt() ;  
+  if (btaggedmediumAK4.size() > 0)  ptak4bjetleading = (btaggedmediumAK4.at(0)).getPt() ;
   HT HTAK4(goodAK4Jets) ; 
   htak4 = HTAK4.getHT() ;
-  if ( htak4 < 600 ) return ; 
 
-  ptak8leading = (goodAK8Jets.at(0)).getPt() ; 
-  h1_["ptak8leading"] -> Fill(ptak8leading) ; 
-  ptak82nd = (goodAK8Jets.at(1)).getPt() ; 
-  h1_["ptak82nd"] -> Fill(ptak82nd) ; 
-  h1_["ht"] -> Fill(htak4) ; 
-  ptak4bjetleading = (btaggedmediumAK4.at(0)).getPt() ;
-  h1_["ptak4bjetleading"] -> Fill(ptak4bjetleading) ; 
+  //// Event selection flags set 
+  if (ptak8leading > 300. ) ispassedLeadingAK8Pt = true ;
+  if (ptak82nd > 250.) ispassed2ndAK8Pt = true ;  
+  if ( btaggedmediumAK4.size() > 0 || btaggedlooseAK4.size() > 2 ) ispassedBTag = true ; 
+  if (htak4 > 700) ispassedHT = true ; 
+
+  //// Fill "N-1" plots 
+  if (ispassedBTag && ispassedHT ) h1_["ptak8leading"] -> Fill(ptak8leading) ; 
+  if (ispassedLeadingAK8Pt && ispassedBTag && ispassedHT ) h1_["ptak82nd"] -> Fill(ptak82nd) ; 
+  if (ispassedBTag) h1_["ht"] -> Fill(htak4) ; 
+  if (ispassedLeadingAK8Pt && ispassed2ndAK8Pt && ispassedBTag && ispassedHT) h1_["ptak4bjetleading"] -> Fill(ptak4bjetleading) ; 
 
   ////  Get HLT decisions
   for ( const std::string& myhltpath : hltPaths_ ) {
@@ -268,24 +271,36 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
       std::string trigname = (hltConfig_.triggerNames()[ii]) ; 
       bool hltdecision = triggerBits->accept(ii) ; 
       if ( myhltpath == trigname && hltdecision ) {
+
         std::stringstream ss ;
-        ss << "ptak8leading_" << myhltpath ; 
-        h1_[ss.str()] -> Fill(ptak8leading) ; 
 
-        ss.clear() ; 
-        ss.str("") ; 
-        ss << "ptak82nd_" << myhltpath ; 
-        h1_[ss.str()] -> Fill (ptak82nd) ;  
+        if (ispassedBTag && ispassedHT )  {
+          ss.clear() ; 
+          ss.str("") ; 
+          ss << "ptak8leading_" << myhltpath ; 
+          h1_[ss.str()] -> Fill(ptak8leading) ; 
+        }
 
-        ss.clear() ; 
-        ss.str("") ; 
-        ss << "ht_" << myhltpath ; 
-        h1_[ss.str()] -> Fill (htak4) ;  
+        if (ispassedLeadingAK8Pt && ispassedBTag && ispassedHT ) { 
+          ss.clear() ; 
+          ss.str("") ; 
+          ss << "ptak82nd_" << myhltpath ; 
+          h1_[ss.str()] -> Fill (ptak82nd) ;  
+        }
 
-        ss.clear() ; 
-        ss.str("") ; 
-        ss << "ptak4bjetleading_" << myhltpath ; 
-        h1_[ss.str()] -> Fill (ptak4bjetleading) ;  
+        if (ispassedBTag) { 
+          ss.clear() ; 
+          ss.str("") ; 
+          ss << "ht_" << myhltpath ; 
+          h1_[ss.str()] -> Fill (htak4) ;  
+        }
+
+        if (ispassedLeadingAK8Pt && ispassed2ndAK8Pt && ispassedBTag && ispassedHT) { 
+          ss.clear() ; 
+          ss.str("") ; 
+          ss << "ptak4bjetleading_" << myhltpath ; 
+          h1_[ss.str()] -> Fill (ptak4bjetleading) ;  
+        }
 
       }
     }
