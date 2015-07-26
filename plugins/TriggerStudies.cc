@@ -101,9 +101,9 @@ class TriggerStudies : public edm::EDAnalyzer {
     edm::Service<TFileService> fs ; 
     std::map<std::string, TH1D*> h1_ ; 
 
-    static const float ptbins_[17] ; 
-    static const float ptbbins_[27] ; 
-    static const float htbins_[17] ; 
+    static const float ptbins_[13] ; 
+    static const float ptbbins_[19] ; 
+    static const float htbins_[19] ; 
 
 };
 
@@ -114,9 +114,9 @@ class TriggerStudies : public edm::EDAnalyzer {
 //
 // static data member definitions
 //
-const float TriggerStudies::ptbins_[17] = {200., 250., 300., 350., 400., 450., 500., 550., 600., 650., 700., 750., 800., 900., 1000., 1200., 1500.} ; 
-const float TriggerStudies::ptbbins_[27] = {0., 25., 50., 75., 100., 125., 150., 175., 200., 225., 250., 275., 300., 325., 350., 375., 400., 425., 450., 475., 500., 550., 600., 650., 700., 750., 800.} ;
-const float TriggerStudies::htbins_[17] = {200., 400., 450., 500., 550., 600., 650., 700., 750., 800., 850., 900., 950., 1000., 1200., 1500., 2000.} ; 
+const float TriggerStudies::ptbins_[13] = {200., 250., 300., 350., 400., 450., 500., 550., 600., 650., 700., 900., 1200.} ; 
+const float TriggerStudies::ptbbins_[19] = {0., 25., 50., 75., 100., 125., 150., 175., 200., 225., 250., 275., 300., 325., 350., 375., 400., 500., 800.} ;
+const float TriggerStudies::htbins_[19] = {200., 400., 450., 500., 550., 600., 650., 700., 750., 800., 850., 900., 950., 1000., 1100., 1200., 1400., 1600., 2000.} ; 
 
 template <typename T>
 struct iterator_extractor { typedef typename T::iterator type; };
@@ -257,7 +257,7 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
     double phi = jet.phi() ; 
     double energy = jet.energy() ; 
     double mass = jet.mass() ; 
-    double softdropmass = jet.userFloat("softDropMass") ; 
+    double softdropmass = jet.userFloat("ak8PFJetsCHSSoftDropMass") ; 
 
     if (abs(eta) > 2.5 || softdropmass < 50) continue ; 
 
@@ -407,36 +407,36 @@ void TriggerStudies::beginJob() {
   //h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 50, 0., 2000.) ; 
   //h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 100, 0., 1000.) ; 
 
-  h1_["ptak8leading"]  = fs->make<TH1D>("ptak8leading"  ,";p_{T}(leading AK8 jet) [GeV];;" , 16, ptbins_ ) ;
-  h1_["ptak82nd"]  = fs->make<TH1D>("ptak82nd"  ,";p_{T}(2nd AK8 jet) [GeV];;" , 16, ptbins_ ) ;
-  h1_["htak4"] = fs->make<TH1D>("htak4" ,";H_{T} (AK4 jets) [GeV]", 16, htbins_ ) ;  
-  h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 16, htbins_ ) ;  
-  h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 26, ptbbins_ ) ; 
+  h1_["ptak8leading"]  = fs->make<TH1D>("ptak8leading"  ,";p_{T}(leading AK8 jet) [GeV];;" , 12, ptbins_ ) ;
+  h1_["ptak82nd"]  = fs->make<TH1D>("ptak82nd"  ,";p_{T}(2nd AK8 jet) [GeV];;" , 12, ptbins_ ) ;
+  h1_["htak4"] = fs->make<TH1D>("htak4" ,";H_{T} (AK4 jets) [GeV]", 18, htbins_ ) ;  
+  h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 18, htbins_ ) ;  
+  h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 18, ptbbins_ ) ; 
 
   for ( const std::string& myhltpath : hltPaths_ ) {
     std::stringstream ss ;
     ss << "ptak8leading_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK8 jet) [GeV];;" , 16, ptbins_ ) ;
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK8 jet) [GeV];;" , 12, ptbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "ptak82nd_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (2nd AK8 jet) [GeV];;" ,16, ptbins_ ) ;
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (2nd AK8 jet) [GeV];;" ,12, ptbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "htak4_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_{T} (AK4 jets) [GeV]" ,16, htbins_ ) ;
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_{T} (AK4 jets) [GeV]" ,18, htbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "htak8_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_{T} (AK8 jets) [GeV]" ,16, htbins_ ) ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_{T} (AK8 jets) [GeV]" ,18, htbins_ ) ; 
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "ptak4bjetleading_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK4 b jet medium OP) [GeV];;" ,26, ptbbins_ ) ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK4 b jet medium OP) [GeV];;" ,18, ptbbins_ ) ; 
   }
 
 }
