@@ -70,6 +70,7 @@ class TriggerStudies : public edm::EDAnalyzer {
     virtual void beginJob() override;
     virtual void analyze(const edm::Event&, const edm::EventSetup&) override;
     virtual void endJob() override;
+    virtual bool filter(const edm::Event&, const std::string, const double, const int) ; 
 
     virtual bool passJetIDLoose (const double& chf, const double& nhf, const double& cef, const double& nef, 
         const int& nch, const int& nconstituents) ; 
@@ -81,7 +82,13 @@ class TriggerStudies : public edm::EDAnalyzer {
 
     // ----------member data ---------------------------
     edm::EDGetTokenT<edm::TriggerResults> triggerBits_;
+    edm::EDGetTokenT<pat::TriggerObjectStandAloneCollection> triggerObjects_;
     edm::EDGetTokenT<pat::PackedTriggerPrescales> triggerPrescales_;
+
+    std::string origPath_;
+    std::vector<double> newThreshs_;
+    std::vector<int> triggerTypes_;
+
     std::string hltProcName_ ; 
     edm::InputTag ak8jetLabel_; 
     edm::InputTag ak4jetLabel_; 
@@ -94,6 +101,10 @@ class TriggerStudies : public edm::EDAnalyzer {
     edm::Service<TFileService> fs ; 
     std::map<std::string, TH1D*> h1_ ; 
 
+    static const float ptbins_[17] ; 
+    static const float ptbbins_[27] ; 
+    static const float htbins_[17] ; 
+
 };
 
 //
@@ -103,19 +114,73 @@ class TriggerStudies : public edm::EDAnalyzer {
 //
 // static data member definitions
 //
+const float TriggerStudies::ptbins_[17] = {200., 250., 300., 350., 400., 450., 500., 550., 600., 650., 700., 750., 800., 900., 1000., 1200., 1500.} ; 
+const float TriggerStudies::ptbbins_[27] = {0., 25., 50., 75., 100., 125., 150., 175., 200., 225., 250., 275., 300., 325., 350., 375., 400., 425., 450., 475., 500., 550., 600., 650., 700., 750., 800.} ;
+const float TriggerStudies::htbins_[17] = {200., 400., 450., 500., 550., 600., 650., 700., 750., 800., 850., 900., 950., 1000., 1200., 1500., 2000.} ; 
+
+template <typename T>
+struct iterator_extractor { typedef typename T::iterator type; };
+
+template <typename T>
+struct iterator_extractor<T const> { typedef typename T::const_iterator type; };
+
+
+template <typename T>
+class Indexer {
+  public:
+    class iterator {
+      typedef typename iterator_extractor<T>::type inner_iterator;
+
+      typedef typename std::iterator_traits<inner_iterator>::reference inner_reference;
+      public:
+      typedef std::pair<size_t, inner_reference> reference;
+
+      iterator(inner_iterator it): _pos(0), _it(it) {}
+
+      reference operator*() const { return reference(_pos, *_it); }
+
+      iterator& operator++() { ++_pos; ++_it; return *this; }
+      iterator operator++(int) { iterator tmp(*this); ++*this; return tmp; }
+
+      bool operator==(iterator const& it) const { return _it == it._it; }
+      bool operator!=(iterator const& it) const { return !(*this == it); }
+
+      private:
+      size_t _pos;
+      inner_iterator _it;
+    };
+
+    Indexer(T& t): _container(t) {}
+
+    iterator begin() const { return iterator(_container.begin()); }
+    iterator end() const { return iterator(_container.end()); }
+
+  private:
+    T& _container;
+}; // class Indexer
+
+template <typename T>
+Indexer<T> index(T& t) { return Indexer<T>(t); }
 
 //
 // constructors and destructor
 //
 TriggerStudies::TriggerStudies(const edm::ParameterSet& iConfig) :
   triggerBits_(consumes<edm::TriggerResults>(iConfig.getParameter<edm::InputTag>("bits"))),
+  triggerObjects_(consumes<pat::TriggerObjectStandAloneCollection>(iConfig.getParameter<edm::InputTag>("objects"))),
   triggerPrescales_(consumes<pat::PackedTriggerPrescales>(iConfig.getParameter<edm::InputTag>("prescales"))), 
+  origPath_(iConfig.getParameter<std::string>("origpath")),//original path to use as a base
+  newThreshs_(iConfig.getParameter<std::vector<double>>("newthreshs")),//new threshold to use on top of original path
+  triggerTypes_(iConfig.getParameter<std::vector<int>>("triggertypes")),//trigger type used
   hltProcName_(iConfig.getParameter<std::string>("hltProcName")), 
   ak8jetLabel_ (iConfig.getParameter<edm::InputTag>("ak8jetLabel")),
   ak4jetLabel_ (iConfig.getParameter<edm::InputTag>("ak4jetLabel")), 
   hltPaths_ (iConfig.getParameter<std::vector<std::string>>    ("hltPaths"))  
 {
   //now do what ever initialization is needed
+  if (hltPaths_.size() != triggerTypes_.size() && triggerTypes_.size() != newThreshs_.size() ) 
+    edm::LogError("SizeMismatch") << ">>>>> Sizes of hltPaths_ " << hltPaths_.size() 
+      << " triggerTypes_ " << triggerTypes_.size() << " newThreshs_" << newThreshs_.size() << " do not match\n" ; 
 
 }
 
@@ -147,6 +212,7 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   double ptak82nd(0) ;
   double ptak4bjetleading(0) ; 
   double htak4(0) ; 
+  double htak8(0) ; 
 
   //// Event selection flags
   bool ispassedLeadingAK8Pt(false) ; 
@@ -191,15 +257,14 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
     double phi = jet.phi() ; 
     double energy = jet.energy() ; 
     double mass = jet.mass() ; 
+    double softdropmass = jet.userFloat("softDropMass") ; 
 
-    if (abs(eta) > 2.5 || mass < 50) continue ; 
+    if (abs(eta) > 2.5 || softdropmass < 50) continue ; 
 
     double tau1 = jet.userFloat("userFloat('NjettinessAK8:tau1')") ; 
     double tau2 = jet.userFloat("userFloat('NjettinessAK8:tau2')") ; 
 
     if (tau2/tau1 > 0.5) continue ; 
-
-    double softdropmass = jet.userFloat("softDropMass") ; 
 
     double bdiscCSV =  jet.bDiscriminator("pfCombinedInclusiveSecondaryVertexV2BJetTags") ; 
 
@@ -252,6 +317,8 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   if (btaggedmediumAK4.size() > 0)  ptak4bjetleading = (btaggedmediumAK4.at(0)).getPt() ;
   HT HTAK4(goodAK4Jets) ; 
   htak4 = HTAK4.getHT() ;
+  HT HTAK8(goodAK8Jets) ; 
+  if  (goodAK8Jets.size() > 1) htak8 = HTAK8.getHT() ;
 
   //// Event selection flags set 
   if (ptak8leading > 300. ) ispassedLeadingAK8Pt = true ;
@@ -262,49 +329,71 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   //// Fill "N-1" plots 
   if (ispassedBTag && ispassedHT ) h1_["ptak8leading"] -> Fill(ptak8leading) ; 
   if (ispassedLeadingAK8Pt && ispassedBTag && ispassedHT ) h1_["ptak82nd"] -> Fill(ptak82nd) ; 
-  if (ispassedBTag) h1_["ht"] -> Fill(htak4) ; 
+  if (ispassedBTag) h1_["htak4"] -> Fill(htak4) ; 
+  if (goodAK8Jets.size() > 1 && ispassedBTag) h1_["htak8"] -> Fill(htak8) ; 
   if (ispassedLeadingAK8Pt && ispassed2ndAK8Pt && ispassedBTag && ispassedHT) h1_["ptak4bjetleading"] -> Fill(ptak4bjetleading) ; 
 
   ////  Get HLT decisions
-  for ( const std::string& myhltpath : hltPaths_ ) {
-    for (unsigned int ii = 0, nn = triggerBits->size(); ii < nn; ++ii) { 
-      std::string trigname = (hltConfig_.triggerNames()[ii]) ; 
-      bool hltdecision = triggerBits->accept(ii) ; 
-      if ( myhltpath == trigname && hltdecision ) {
 
-        std::stringstream ss ;
+  for ( auto hltpath : index(hltPaths_) ) {
 
-        if (ispassedBTag && ispassedHT )  {
-          ss.clear() ; 
-          ss.str("") ; 
-          ss << "ptak8leading_" << myhltpath ; 
-          h1_[ss.str()] -> Fill(ptak8leading) ; 
-        }
+    const std::string myhltpath = hltpath.second ;  
+    const int triggerType = triggerTypes_.at(hltpath.first) ; 
+    const double newThresh = newThreshs_.at(hltpath.first) ; 
 
-        if (ispassedLeadingAK8Pt && ispassedBTag && ispassedHT ) { 
-          ss.clear() ; 
-          ss.str("") ; 
-          ss << "ptak82nd_" << myhltpath ; 
-          h1_[ss.str()] -> Fill (ptak82nd) ;  
-        }
+    //std::cout << " hltpath = " << myhltpath << " triggertype = " << triggerType << std::endl ;
 
-        if (ispassedBTag) { 
-          ss.clear() ; 
-          ss.str("") ; 
-          ss << "ht_" << myhltpath ; 
-          h1_[ss.str()] -> Fill (htak4) ;  
-        }
+    if ( !filter(iEvent, myhltpath, newThresh, triggerType) ) continue ; 
 
-        if (ispassedLeadingAK8Pt && ispassed2ndAK8Pt && ispassedBTag && ispassedHT) { 
-          ss.clear() ; 
-          ss.str("") ; 
-          ss << "ptak4bjetleading_" << myhltpath ; 
-          h1_[ss.str()] -> Fill (ptak4bjetleading) ;  
-        }
+    std::stringstream ss ;
 
-      }
+    if (ispassedBTag && ispassedHT )  {
+      ss.clear() ; 
+      ss.str("") ; 
+      ss << "ptak8leading_" << myhltpath ; 
+      h1_[ss.str()] -> Fill(ptak8leading) ; 
     }
+
+    if (ispassedLeadingAK8Pt && ispassedBTag && ispassedHT ) { 
+      ss.clear() ; 
+      ss.str("") ; 
+      ss << "ptak82nd_" << myhltpath ; 
+      h1_[ss.str()] -> Fill (ptak82nd) ;  
+    }
+
+    if (ispassedBTag) { 
+      ss.clear() ; 
+      ss.str("") ; 
+      ss << "htak4_" << myhltpath ; 
+      h1_[ss.str()] -> Fill (htak4) ;  
+    }
+
+    if ( goodAK8Jets.size() > 1 && ispassedBTag ) {
+      ss.clear() ; 
+      ss.str("") ; 
+      ss << "htak8_" << myhltpath ; 
+      h1_[ss.str()] -> Fill (htak8) ;  
+    }
+
+    if (ispassedLeadingAK8Pt && ispassed2ndAK8Pt && ispassedBTag && ispassedHT) { 
+      ss.clear() ; 
+      ss.str("") ; 
+      ss << "ptak4bjetleading_" << myhltpath ; 
+      h1_[ss.str()] -> Fill (ptak4bjetleading) ;  
+    }
+
   }
+
+  ////  Get HLT decisions
+  //DMfor ( const std::string& origPath_ : hltPaths_ ) {
+  //DM  for (unsigned int ii = 0, nn = triggerBits->size(); ii < nn; ++ii) { 
+  //DM    std::string trigname = (hltConfig_.triggerNames()[ii]) ; 
+  //DM    bool hltdecision = triggerBits->accept(ii) ; 
+  //DM    if ( origPath_ == trigname && hltdecision ) {
+
+  //DM    }
+  //DM  }
+  //DM}
 
 }
 
@@ -312,30 +401,42 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
 // ------------ method called once each job just before starting event loop  ------------
 void TriggerStudies::beginJob() {
 
-  h1_["ptak8leading"]  = fs->make<TH1D>("ptak8leading"  ,";p_T(leading AK8 jet) [GeV];;" , 40, 0., 2000.) ; 
-  h1_["ptak82nd"]  = fs->make<TH1D>("ptak82nd"  ,";p_T(2nd AK8 jet) [GeV];;" , 40, 0., 2000.) ; 
-  h1_["ht"] = fs->make<TH1D>("ht" ,";H_T (AK4 jets) [GeV]", 50, 0., 2000.) ; 
-  h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_T(leading AK4 b jet medium OP) [GeV];;" , 100, 0., 1000.) ; 
+  //h1_["ptak8leading"]  = fs->make<TH1D>("ptak8leading"  ,";p_{T}(leading AK8 jet) [GeV];;" , 40, 0., 2000.) ; 
+  //h1_["ptak82nd"]  = fs->make<TH1D>("ptak82nd"  ,";p_{T}(2nd AK8 jet) [GeV];;" , 40, 0., 2000.) ; 
+  //h1_["htak4"] = fs->make<TH1D>("htak4" ,";H_{T} (AK4 jets) [GeV]", 50, 0., 2000.) ; 
+  //h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 50, 0., 2000.) ; 
+  //h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 100, 0., 1000.) ; 
+
+  h1_["ptak8leading"]  = fs->make<TH1D>("ptak8leading"  ,";p_{T}(leading AK8 jet) [GeV];;" , 16, ptbins_ ) ;
+  h1_["ptak82nd"]  = fs->make<TH1D>("ptak82nd"  ,";p_{T}(2nd AK8 jet) [GeV];;" , 16, ptbins_ ) ;
+  h1_["htak4"] = fs->make<TH1D>("htak4" ,";H_{T} (AK4 jets) [GeV]", 16, htbins_ ) ;  
+  h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 16, htbins_ ) ;  
+  h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 26, ptbbins_ ) ; 
 
   for ( const std::string& myhltpath : hltPaths_ ) {
     std::stringstream ss ;
     ss << "ptak8leading_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_T (leading AK8 jet) [GeV];;" ,40, 0., 2000.) ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK8 jet) [GeV];;" , 16, ptbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "ptak82nd_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_T (2nd AK8 jet) [GeV];;" ,40, 0., 2000.) ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (2nd AK8 jet) [GeV];;" ,16, ptbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
-    ss << "ht_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_T (AK4 jets) [GeV]" ,50, 0., 2000.) ; 
+    ss << "htak4_" << myhltpath ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_{T} (AK4 jets) [GeV]" ,16, htbins_ ) ;
+
+    ss.clear() ; 
+    ss.str("") ; 
+    ss << "htak8_" << myhltpath ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_{T} (AK8 jets) [GeV]" ,16, htbins_ ) ; 
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "ptak4bjetleading_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_T (leading AK4 b jet medium OP) [GeV];;" ,100, 0., 1000.) ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK4 b jet medium OP) [GeV];;" ,26, ptbbins_ ) ; 
   }
 
 }
@@ -365,13 +466,23 @@ void TriggerStudies::endJob() {
 
     ss.clear() ; 
     ss.str("") ; 
-    ss << "ht_" << myhltpath ; 
-    TGraphAsymmErrors* greffht = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["ht"], "cp") ;
+    ss << "htak4_" << myhltpath ; 
+    TGraphAsymmErrors* greffhtak4 = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["htak4"], "cp") ;
     ss.clear() ; 
     ss.str("") ; 
-    ss << "eff_ht_" << myhltpath ;
-    greffht->SetName((ss.str()).c_str()) ; 
-    greffht->Write() ; 
+    ss << "eff_htak4_" << myhltpath ;
+    greffhtak4->SetName((ss.str()).c_str()) ; 
+    greffhtak4->Write() ; 
+
+    ss.clear() ; 
+    ss.str("") ; 
+    ss << "htak8_" << myhltpath ; 
+    TGraphAsymmErrors* greffhtak8 = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["htak8"], "cp") ;
+    ss.clear() ; 
+    ss.str("") ; 
+    ss << "eff_htak8_" << myhltpath ;
+    greffhtak8->SetName((ss.str()).c_str()) ; 
+    greffhtak8->Write() ; 
 
     ss.clear() ; 
     ss.str("") ; 
@@ -399,6 +510,37 @@ bool TriggerStudies::passJetIDLoose (const double& chf, const double& nhf, const
   if (chf > _chf && nhf < _nhf && cef < _cef && nef < _nef && nch > _nch && nconstituents > _nconstituents) decision = true ;
 
   return decision ;
+}
+
+bool TriggerStudies::filter(const edm::Event& iEvent, const std::string myhltpath, const double newThresh, const int triggerType) {
+  edm::Handle<edm::TriggerResults> triggerBits;
+  edm::Handle<pat::TriggerObjectStandAloneCollection> triggerObjects;
+
+  iEvent.getByToken(triggerBits_, triggerBits);
+  iEvent.getByToken(triggerObjects_, triggerObjects);
+
+  const edm::TriggerNames &names = iEvent.triggerNames(*triggerBits);
+  for (unsigned int i = 0, n = triggerBits->size(); i < n; ++i) {
+    //std::cout << ">>>> HLT path " << names.triggerName(i) << " decision = " << triggerBits->accept(i) << std::endl ;
+    if (names.triggerName(i)==myhltpath && triggerBits->accept(i)) {
+      //std::cout <<" Found path pass " << names.triggerName(i) << std::endl ;
+      for (pat::TriggerObjectStandAlone obj : *triggerObjects) {
+        obj.unpackPathNames(names);
+        for (unsigned h = 0; h < obj.filterIds().size(); ++h) {
+          if (obj.filterIds()[h]==triggerType && obj.hasPathName( myhltpath, true, true )) { //look at https://github.com/cms-sw/cmssw/blob/CMSSW_7_4_X/DataFormats/HLTReco/interface/TriggerTypeDefs.h for an explanation of trigger types
+            //std::cout << "Found correct type and path object... ";
+            if (obj.pt()>newThresh) {
+              //std::cout << "Found passing object!" << std::endl;
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  //std::cout << std::endl;
+
+  return false;
 }
 
 // ------------ method called when starting to processes a run  ------------
