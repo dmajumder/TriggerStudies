@@ -234,12 +234,13 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   iEvent.getByToken(triggerBits_, triggerBits);
   iEvent.getByToken(triggerPrescales_, triggerPrescales);
 
-  //std::cout << " Trigger bit size = " << triggerBits->size() << std::endl ; 
-  //for (unsigned int ii = 0, nn = triggerBits->size(); ii < nn; ++ii) {
-  //  std::cout << ">>>>>>HLT bit " << ii << " path: " <<  (hltConfig_.triggerNames()[ii]) << " pass? " << triggerBits->accept(ii)  
-  //    << std::endl ; 
-  //  //<< " has prescale index " << triggerPrescales->getPrescaleForIndex(ii) << std::endl ; 
-  //}
+  std::cout << " Trigger bit size = " << triggerBits->size() << std::endl ; 
+  for (unsigned int ii = 0, nn = triggerBits->size(); ii < nn; ++ii) {
+    std::cout << ">>>>>>HLT bit " << ii << " path: " <<  (hltConfig_.triggerNames()[ii]) << " pass? " << triggerBits->accept(ii)  
+      << " has prescale index " << triggerPrescales->getPrescaleForIndex(ii) << std::endl ; 
+  }
+
+  return ; 
 
   //// Do event selection
   edm::Handle<std::vector<pat::Jet> > ak8jetHandle, ak4jetHandle;
@@ -324,14 +325,17 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   if (ptak8leading > 300. ) ispassedLeadingAK8Pt = true ;
   if (ptak82nd > 250.) ispassed2ndAK8Pt = true ;  
   if ( btaggedmediumAK4.size() > 0 || btaggedlooseAK4.size() > 2 ) ispassedBTag = true ; 
-  if (htak4 > 700) ispassedHT = true ; 
+  if (htak8 > 700) ispassedHT = true ; 
 
   //// Fill "N-1" plots 
   if (ispassedBTag && ispassedHT ) h1_["ptak8leading"] -> Fill(ptak8leading) ; 
   if (ispassedLeadingAK8Pt && ispassedBTag && ispassedHT ) h1_["ptak82nd"] -> Fill(ptak82nd) ; 
   if (ispassedBTag) h1_["htak4"] -> Fill(htak4) ; 
   if (goodAK8Jets.size() > 1 && ispassedBTag) h1_["htak8"] -> Fill(htak8) ; 
-  if (ispassedLeadingAK8Pt && ispassed2ndAK8Pt && ispassedBTag && ispassedHT) h1_["ptak4bjetleading"] -> Fill(ptak4bjetleading) ; 
+  if (ispassedLeadingAK8Pt && ispassed2ndAK8Pt && ispassedBTag && ispassedHT) {
+    h1_["ptak4bjetleading"] -> Fill(ptak4bjetleading) ; 
+    h1_["hallpassing"] -> Fill(0.5) ; 
+  }
 
   ////  Get HLT decisions
 
@@ -380,6 +384,11 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
       ss.str("") ; 
       ss << "ptak4bjetleading_" << myhltpath ; 
       h1_[ss.str()] -> Fill (ptak4bjetleading) ;  
+
+      ss.clear() ; 
+      ss.str("") ; 
+      ss << "hallpassing_" << myhltpath ; 
+      h1_[ss.str()] -> Fill (0.5) ;  
     }
 
   }
@@ -412,6 +421,7 @@ void TriggerStudies::beginJob() {
   h1_["htak4"] = fs->make<TH1D>("htak4" ,";H_{T} (AK4 jets) [GeV]", 18, htbins_ ) ;  
   h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 18, htbins_ ) ;  
   h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 18, ptbbins_ ) ; 
+  h1_["hallpassing"] = fs->make<TH1D>("hallpassing", "all events", 1, 0., 1.) ; 
 
   for ( const std::string& myhltpath : hltPaths_ ) {
     std::stringstream ss ;
@@ -437,6 +447,11 @@ void TriggerStudies::beginJob() {
     ss.str("") ; 
     ss << "ptak4bjetleading_" << myhltpath ; 
     h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK4 b jet medium OP) [GeV];;" ,18, ptbbins_ ) ; 
+
+    ss.clear() ; 
+    ss.str("") ; 
+    ss << "hallpassing_" << myhltpath ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"all events", 1, 0., 1.) ; 
   }
 
 }
@@ -493,6 +508,16 @@ void TriggerStudies::endJob() {
     ss << "eff_ptak4bjetleading_" << myhltpath ;
     greffak4bjetleading->SetName((ss.str()).c_str()) ; 
     greffak4bjetleading->Write() ; 
+
+    ss.clear() ; 
+    ss.str("") ; 
+    ss << "hallpassing_" << myhltpath ; 
+    TGraphAsymmErrors* greffallpassing = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["hallpassing"], "cp") ;
+    ss.clear() ; 
+    ss.str("") ; 
+    ss << "eff_allpassing_" << myhltpath ;
+    greffallpassing->SetName((ss.str()).c_str()) ; 
+    greffallpassing->Write() ; 
   }
 
 }
