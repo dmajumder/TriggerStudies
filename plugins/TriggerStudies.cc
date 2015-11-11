@@ -45,7 +45,6 @@ Implementation:
 
 #include "HLTrigger/HLTcore/interface/HLTConfigProvider.h"
 
-#include "AnalysisDataFormats/BoostedObjects/interface/Jet.h"
 #include "Analysis/VLQAna/interface/HT.h"
 #include "Analysis/VLQAna/interface/Utilities.h"
 
