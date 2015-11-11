@@ -233,13 +233,11 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   iEvent.getByToken(triggerBits_, triggerBits);
   iEvent.getByToken(triggerPrescales_, triggerPrescales);
 
-  std::cout << " Trigger bit size = " << triggerBits->size() << std::endl ; 
-  for (unsigned int ii = 0, nn = triggerBits->size(); ii < nn; ++ii) {
-    std::cout << ">>>>>>HLT bit " << ii << " path: " <<  (hltConfig_.triggerNames()[ii]) << " pass? " << triggerBits->accept(ii)  
-      << " has prescale index " << triggerPrescales->getPrescaleForIndex(ii) << std::endl ; 
-  }
-
-  return ; 
+  //std::cout << " Trigger bit size = " << triggerBits->size() << std::endl ; 
+  //for (unsigned int ii = 0, nn = triggerBits->size(); ii < nn; ++ii) {
+  //  std::cout << ">>>>>>HLT bit " << ii << " path: " <<  (hltConfig_.triggerNames()[ii]) << " pass? " << triggerBits->accept(ii)  
+  //    << " has prescale index " << triggerPrescales->getPrescaleForIndex(ii) << std::endl ; 
+  //}
 
   //// Do event selection
   edm::Handle<std::vector<pat::Jet> > ak8jetHandle, ak4jetHandle;
@@ -344,7 +342,7 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
     const int triggerType = triggerTypes_.at(hltpath.first) ; 
     const double newThresh = newThreshs_.at(hltpath.first) ; 
 
-    //std::cout << " hltpath = " << myhltpath << " triggertype = " << triggerType << std::endl ;
+    //std::cout << ">>>> TriggerStudies:analyze: hltpath = " << myhltpath << " triggertype = " << triggerType << std::endl ;
 
     if ( !filter(iEvent, myhltpath, newThresh, triggerType) ) continue ; 
 
@@ -435,12 +433,12 @@ void TriggerStudies::beginJob() {
     ss.clear() ; 
     ss.str("") ; 
     ss << "htak4_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_{T} (AK4 jets) [GeV]" ,18, htbins_ ) ;
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";H_{T} (AK4 jets) [GeV];;" ,18, htbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "htak8_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,"H_{T} (AK8 jets) [GeV]" ,18, htbins_ ) ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";H_{T} (AK8 jets) [GeV];;" ,18, htbins_ ) ; 
 
     ss.clear() ; 
     ss.str("") ; 
@@ -545,20 +543,23 @@ bool TriggerStudies::filter(const edm::Event& iEvent, const std::string myhltpat
 
   const edm::TriggerNames &names = iEvent.triggerNames(*triggerBits);
   for (unsigned int i = 0, n = triggerBits->size(); i < n; ++i) {
-    //std::cout << ">>>> HLT path " << names.triggerName(i) << " decision = " << triggerBits->accept(i) << std::endl ;
-    if (names.triggerName(i)==myhltpath && triggerBits->accept(i)) {
-      //std::cout <<" Found path pass " << names.triggerName(i) << std::endl ;
-      for (pat::TriggerObjectStandAlone obj : *triggerObjects) {
-        obj.unpackPathNames(names);
-        for (unsigned h = 0; h < obj.filterIds().size(); ++h) {
-          if (obj.filterIds()[h]==triggerType && obj.hasPathName( myhltpath, true, true )) { //look at https://github.com/cms-sw/cmssw/blob/CMSSW_7_4_X/DataFormats/HLTReco/interface/TriggerTypeDefs.h for an explanation of trigger types
-            //std::cout << "Found correct type and path object... ";
-            if (obj.pt()>newThresh) {
-              //std::cout << "Found passing object!" << std::endl;
-              return true;
-            }
-          }
-        }
+    if ( (names.triggerName(i)).find(myhltpath) != std::string::npos ) { 
+      //std::cout << ">>>>TriggerStudies::filter: HLT path " << names.triggerName(i) << " myhltpath " << myhltpath <<  " decision = " << triggerBits->accept(i) << std::endl ;
+      if ( triggerBits->accept(i) ) {
+        //std::cout <<"TriggerStudies::filter: Found path pass " << names.triggerName(i) << " myhltpath " << myhltpath << std::endl ;
+        return true ; 
+        //for (pat::TriggerObjectStandAlone obj : *triggerObjects) {
+        //  obj.unpackPathNames(names);
+        //  for (unsigned h = 0; h < obj.filterIds().size(); ++h) {
+        //    if (obj.filterIds()[h]==triggerType && obj.hasPathName( myhltpath, true, true )) { //look at https://github.com/cms-sw/cmssw/blob/CMSSW_7_4_X/DataFormats/HLTReco/interface/TriggerTypeDefs.h for an explanation of trigger types
+        //      //std::cout << "Found correct type and path object... ";
+        //      if (obj.pt()>newThresh) {
+        //        //std::cout << "Found passing object!" << std::endl;
+        //        return true;
+        //      }
+        //    }
+        //  }
+        //}
       }
     }
   }
@@ -567,29 +568,23 @@ bool TriggerStudies::filter(const edm::Event& iEvent, const std::string myhltpat
   return false;
 }
 
-// ------------ method called when starting to processes a run  ------------
 /*
-   void TriggerStudies::beginRun(edm::Run const&, edm::EventSetup const&) {
-   }
-   */
+// ------------ method called when starting to processes a run  ------------
+void TriggerStudies::beginRun(edm::Run const&, edm::EventSetup const&) {
+}
 
 // ------------ method called when ending the processing of a run  ------------
-/*
-   void  TriggerStudies::endRun(edm::Run const&, edm::EventSetup const&) {
-   }
-   */
+void  TriggerStudies::endRun(edm::Run const&, edm::EventSetup const&) {
+}
 
 // ------------ method called when starting to processes a luminosity block  ------------
-/*
-   void  TriggerStudies::beginLuminosityBlock(edm::LuminosityBlock const&, edm::EventSetup const&) {
-   }
-   */
+void  TriggerStudies::beginLuminosityBlock(edm::LuminosityBlock const&, edm::EventSetup const&) {
+}
 
 // ------------ method called when ending the processing of a luminosity block  ------------
-/*
-   void  TriggerStudies::endLuminosityBlock(edm::LuminosityBlock const&, edm::EventSetup const&) {
-   }
-   */
+void  TriggerStudies::endLuminosityBlock(edm::LuminosityBlock const&, edm::EventSetup const&) {
+}
+*/
 
 // ------------ method fills 'descriptions' with the allowed parameters for the module  ------------
 void TriggerStudies::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
