@@ -40,7 +40,7 @@ process.source = cms.Source("PoolSource",
 
 process.TFileService = cms.Service("TFileService",
     fileName = cms.string(
-      "triggers_data_Run2015D_05Oct2015.root" 
+      "trigsel.root" 
       )
     )
 
