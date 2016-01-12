@@ -100,9 +100,9 @@ class TriggerStudies : public edm::EDAnalyzer {
     edm::Service<TFileService> fs ; 
     std::map<std::string, TH1D*> h1_ ; 
 
-    static const float ptbins_[13] ; 
-    static const float ptbbins_[19] ; 
-    static const float htbins_[19] ; 
+    static const float ptbins_[21] ; 
+    static const float ptbbins_[26] ; 
+    static const float htbins_[34] ; 
 
 };
 
@@ -113,9 +113,9 @@ class TriggerStudies : public edm::EDAnalyzer {
 //
 // static data member definitions
 //
-const float TriggerStudies::ptbins_[13] = {200., 250., 300., 350., 400., 450., 500., 550., 600., 650., 700., 900., 1200.} ; 
-const float TriggerStudies::ptbbins_[19] = {0., 25., 50., 75., 100., 125., 150., 175., 200., 225., 250., 275., 300., 325., 350., 375., 400., 500., 800.} ;
-const float TriggerStudies::htbins_[19] = {200., 400., 450., 500., 550., 600., 650., 700., 750., 800., 850., 900., 950., 1000., 1100., 1200., 1400., 1600., 2000.} ; 
+const float TriggerStudies::ptbins_[21] = {180, 200., 220., 240, 260, 280, 300., 320, 340, 360, 380, 400., 450., 500., 550., 600., 650., 700., 800, 900., 1200.} ; 
+const float TriggerStudies::ptbbins_[26] = {0., 20., 40., 60., 80., 100., 120., 140., 160., 180., 200., 220., 240., 260., 280., 300., 320., 340., 360., 380., 400., 450., 500., 600., 700., 800.} ;
+const float TriggerStudies::htbins_[34] = {200., 250., 300., 350., 400., 420., 440., 460., 480., 500., 520., 540., 560., 580., 600., 620., 640., 660., 680., 700., 720., 740., 760., 780., 800., 850., 900., 950., 1000., 1100., 1200., 1400., 1600., 2000.} ; 
 
 template <typename T>
 struct iterator_extractor { typedef typename T::iterator type; };
@@ -204,7 +204,7 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   using namespace std;
 
   //// Event collections
-  vlq::JetCollection goodAK8Jets, goodAK4Jets, btaggedlooseAK4, btaggedmediumAK4 ;
+  vlq::JetCollection goodAK8Jets, goodVJets, goodAK4Jets, btaggedlooseAK4, btaggedmediumAK4 ;
 
   //// Event selection variables
   double ptak8leading(0) ; 
@@ -212,6 +212,8 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   double ptak4bjetleading(0) ; 
   double htak4(0) ; 
   double htak8(0) ; 
+  double mjj_leading2ak8jets(0) ; 
+  double mjj_leading2htaggedjets(0) ; 
 
   //// Event selection flags
   bool ispassedLeadingAK8Pt(false) ; 
@@ -248,23 +250,13 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   for (size_t i = 0; i< ak8jetColl->size(); i++){
     pat::Jet & jet = (*ak8jetColl)[i];
 
-    int idx = i;
     double pt = jet.pt() ; 
     double eta = jet.eta() ; 
-    double rapidity = jet.rapidity() ; 
     double phi = jet.phi() ; 
-    double energy = jet.energy() ; 
     double mass = jet.mass() ; 
-    double softdropmass = jet.userFloat("ak8PFJetsCHSSoftDropMass") ; 
-
-    if (abs(eta) > 2.5 || softdropmass < 50) continue ; 
-
-    double tau1 = jet.userFloat("userFloat('NjettinessAK8:tau1')") ; 
-    double tau2 = jet.userFloat("userFloat('NjettinessAK8:tau2')") ; 
-
-    if (tau2/tau1 > 0.5) continue ; 
-
     double bdiscCSV =  jet.bDiscriminator("pfCombinedInclusiveSecondaryVertexV2BJetTags") ; 
+
+    if (abs(eta) > 2.4) continue ; 
 
     TLorentzVector jetp4 ; 
     jetp4.SetPtEtaPhiM(pt, eta, phi, mass) ; 
@@ -273,21 +265,27 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
     myjet.setCSV(bdiscCSV) ;
     goodAK8Jets.push_back(myjet) ;
 
+    double softdropmass = jet.userFloat("ak8PFJetsCHSSoftDropMass") ; 
+    if (softdropmass < 50) continue ; 
+
+    double tau1 = jet.userFloat("userFloat('NjettinessAK8:tau1')") ; 
+    double tau2 = jet.userFloat("userFloat('NjettinessAK8:tau2')") ; 
+    if (tau2/tau1 > 0.5) continue ; 
+
+    goodVJets.push_back(myjet) ;
+
   }
 
   std:: auto_ptr<vector<pat::Jet> > ak4jetColl( new vector<pat::Jet> (*ak4jetHandle) );
   for (size_t i = 0; i< ak4jetColl->size(); i++){
     pat::Jet & jet = (*ak4jetColl)[i];
 
-    int idx = i;
     double pt = jet.pt() ; 
     double eta = jet.eta() ; 
 
     if (pt < 30 || abs(eta) > 5) continue ; 
 
-    double rapidity = jet.rapidity() ; 
     double phi = jet.phi() ; 
-    double energy = jet.energy() ; 
     double mass = jet.mass() ; 
     double bdiscCSV = jet.bDiscriminator("pfCombinedInclusiveSecondaryVertexV2BJetTags") ; 
 
@@ -303,16 +301,22 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   }
 
   //// Event pre-selection 
-  if ( goodAK8Jets.size() < 1 ) return ; 
-  if ( goodAK4Jets.size() < 4 ) return ; 
+  if ( goodAK8Jets.size() < 2 ) return ; 
+  if ( goodAK4Jets.size() < 2 ) return ; 
 
   if (goodAK4Jets.size() > 0) std::sort(goodAK4Jets.begin(), goodAK4Jets.end(), Utilities::sortByPt<vlq::Jet>) ; 
   if (goodAK8Jets.size() > 0) std::sort(goodAK8Jets.begin(), goodAK8Jets.end(), Utilities::sortByPt<vlq::Jet>) ; 
   if (btaggedmediumAK4.size() > 0) std::sort(btaggedmediumAK4.begin(), btaggedmediumAK4.end(), Utilities::sortByPt<vlq::Jet>) ; 
 
-  if (goodAK8Jets.size() > 0)  ptak8leading = (goodAK8Jets.at(0)).getPt() ; 
-  if (goodAK8Jets.size() > 1) ptak82nd = (goodAK8Jets.at(1)).getPt() ;  
+  if (goodVJets.size() > 0)  ptak8leading = (goodVJets.at(0)).getPt() ; 
+  if (goodAK8Jets.size() > 1) {
+    ptak82nd = (goodAK8Jets.at(1)).getPt() ;  
+    mjj_leading2ak8jets = (goodAK8Jets.at(0).getP4() + goodAK8Jets.at(1).getP4()).Mag() ;
+  }
   if (btaggedmediumAK4.size() > 0)  ptak4bjetleading = (btaggedmediumAK4.at(0)).getPt() ;
+  if (goodVJets.size() > 1) {
+    mjj_leading2htaggedjets = (goodVJets.at(0).getP4() + goodVJets.at(1).getP4()).Mag() ; 
+  }
   HT HTAK4(goodAK4Jets) ; 
   htak4 = HTAK4.getHT() ;
   HT HTAK8(goodAK8Jets) ; 
@@ -388,6 +392,18 @@ void TriggerStudies::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
       h1_[ss.str()] -> Fill (0.5) ;  
     }
 
+    if (ispassedLeadingAK8Pt && ispassed2ndAK8Pt) {
+      ss.clear() ; 
+      ss.str("") ; 
+      ss << "mjj_" << myhltpath ; 
+      h1_[ss.str()] -> Fill (mjj_leading2ak8jets) ;  
+
+      ss.clear() ; 
+      ss.str("") ; 
+      ss << "mjj_htagged_" << myhltpath ; 
+      h1_[ss.str()] -> Fill (mjj_leading2htaggedjets) ;  
+    }
+
   }
 
   ////  Get HLT decisions
@@ -413,37 +429,50 @@ void TriggerStudies::beginJob() {
   //h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 50, 0., 2000.) ; 
   //h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 100, 0., 1000.) ; 
 
-  h1_["ptak8leading"]  = fs->make<TH1D>("ptak8leading"  ,";p_{T}(leading AK8 jet) [GeV];;" , 12, ptbins_ ) ;
-  h1_["ptak82nd"]  = fs->make<TH1D>("ptak82nd"  ,";p_{T}(2nd AK8 jet) [GeV];;" , 12, ptbins_ ) ;
-  h1_["htak4"] = fs->make<TH1D>("htak4" ,";H_{T} (AK4 jets) [GeV]", 18, htbins_ ) ;  
-  h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 18, htbins_ ) ;  
-  h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 18, ptbbins_ ) ; 
+  h1_["ptak8leading"]  = fs->make<TH1D>("ptak8leading"  ,";p_{T}(leading AK8 jet) [GeV];;" , 20, ptbins_ ) ;
+  h1_["ptak82nd"]  = fs->make<TH1D>("ptak82nd"  ,";p_{T}(2nd AK8 jet) [GeV];;" , 20, ptbins_ ) ;
+  h1_["htak4"] = fs->make<TH1D>("htak4" ,";H_{T} (AK4 jets) [GeV]", 33, htbins_ ) ;  
+  h1_["htak8"] = fs->make<TH1D>("htak8" ,";H_{T} (AK8 jets) [GeV]", 33, htbins_ ) ;  
+  h1_["ptak4bjetleading"] = fs->make<TH1D>("ptak4bjetleading"  ,";p_{T}(leading AK4 b jet medium OP) [GeV];;" , 25, ptbbins_ ) ; 
+  h1_["mjj"] = fs->make<TH1D>("mjj", ";M(jj) [GeV];;", 30, 500, 2000) ; 
+  h1_["mjj_htagged"] = fs->make<TH1D>("mjj_htagged", ";M(jj) [GeV];;", 30, 500, 2000) ; 
   h1_["hallpassing"] = fs->make<TH1D>("hallpassing", "all events", 1, 0., 1.) ; 
 
   for ( const std::string& myhltpath : hltPaths_ ) {
     std::stringstream ss ;
     ss << "ptak8leading_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK8 jet) [GeV];;" , 12, ptbins_ ) ;
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK8 jet) [GeV];;" , 20, ptbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "ptak82nd_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (2nd AK8 jet) [GeV];;" ,12, ptbins_ ) ;
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (2nd AK8 jet) [GeV];;" ,20, ptbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "htak4_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";H_{T} (AK4 jets) [GeV];;" ,18, htbins_ ) ;
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";H_{T} (AK4 jets) [GeV];;" ,33, htbins_ ) ;
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "htak8_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";H_{T} (AK8 jets) [GeV];;" ,18, htbins_ ) ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";H_{T} (AK8 jets) [GeV];;" ,33, htbins_ ) ; 
 
     ss.clear() ; 
     ss.str("") ; 
     ss << "ptak4bjetleading_" << myhltpath ; 
-    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK4 b jet medium OP) [GeV];;" ,18, ptbbins_ ) ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";p_{T} (leading AK4 b jet medium OP) [GeV];;" ,25, ptbbins_ ) ; 
+
+    ss.clear() ; 
+    ss.str("") ; 
+    ss << "mjj_" << myhltpath ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";M(jj) [GeV];;" ,30, 500, 2000) ; 
+
+    ss.str("") ; 
+    ss.clear() ; 
+    ss.str("") ; 
+    ss << "mjj_htagged_" << myhltpath ; 
+    h1_[ss.str()] = fs->make<TH1D>((ss.str()).c_str() ,";M(jj) [GeV];;" ,30, 500, 2000) ; 
 
     ss.clear() ; 
     ss.str("") ; 
@@ -456,66 +485,66 @@ void TriggerStudies::beginJob() {
 // ------------ method called once each job just after ending the event loop  ------------
 void TriggerStudies::endJob() {
 
-  for ( const std::string& myhltpath : hltPaths_ ) {
-    std::stringstream ss ;
-    ss << "ptak8leading_" << myhltpath ; 
-    TGraphAsymmErrors* greffak8leading = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["ptak8leading"], "cp") ;
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "eff_ptak8leading_" << myhltpath ;
-    greffak8leading->SetName((ss.str()).c_str()) ;  
-    greffak8leading->Write() ; 
+  //for ( const std::string& myhltpath : hltPaths_ ) {
+  //  std::stringstream ss ;
+  //  ss << "ptak8leading_" << myhltpath ; 
+  //  TGraphAsymmErrors* greffak8leading = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["ptak8leading"], "cp") ;
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "eff_ptak8leading_" << myhltpath ;
+  //  greffak8leading->SetName((ss.str()).c_str()) ;  
+  //  greffak8leading->Write() ; 
 
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "ptak82nd_" << myhltpath ; 
-    TGraphAsymmErrors* greffak82nd = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["ptak82nd"], "cp") ;
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "eff_ptak82nd_" << myhltpath ;
-    greffak82nd->SetName((ss.str()).c_str()) ; 
-    greffak82nd->Write() ; 
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "ptak82nd_" << myhltpath ; 
+  //  TGraphAsymmErrors* greffak82nd = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["ptak82nd"], "cp") ;
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "eff_ptak82nd_" << myhltpath ;
+  //  greffak82nd->SetName((ss.str()).c_str()) ; 
+  //  greffak82nd->Write() ; 
 
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "htak4_" << myhltpath ; 
-    TGraphAsymmErrors* greffhtak4 = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["htak4"], "cp") ;
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "eff_htak4_" << myhltpath ;
-    greffhtak4->SetName((ss.str()).c_str()) ; 
-    greffhtak4->Write() ; 
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "htak4_" << myhltpath ; 
+  //  TGraphAsymmErrors* greffhtak4 = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["htak4"], "cp") ;
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "eff_htak4_" << myhltpath ;
+  //  greffhtak4->SetName((ss.str()).c_str()) ; 
+  //  greffhtak4->Write() ; 
 
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "htak8_" << myhltpath ; 
-    TGraphAsymmErrors* greffhtak8 = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["htak8"], "cp") ;
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "eff_htak8_" << myhltpath ;
-    greffhtak8->SetName((ss.str()).c_str()) ; 
-    greffhtak8->Write() ; 
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "htak8_" << myhltpath ; 
+  //  TGraphAsymmErrors* greffhtak8 = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["htak8"], "cp") ;
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "eff_htak8_" << myhltpath ;
+  //  greffhtak8->SetName((ss.str()).c_str()) ; 
+  //  greffhtak8->Write() ; 
 
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "ptak4bjetleading_" << myhltpath ; 
-    TGraphAsymmErrors* greffak4bjetleading = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["ptak4bjetleading"], "cp") ;
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "eff_ptak4bjetleading_" << myhltpath ;
-    greffak4bjetleading->SetName((ss.str()).c_str()) ; 
-    greffak4bjetleading->Write() ; 
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "ptak4bjetleading_" << myhltpath ; 
+  //  TGraphAsymmErrors* greffak4bjetleading = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["ptak4bjetleading"], "cp") ;
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "eff_ptak4bjetleading_" << myhltpath ;
+  //  greffak4bjetleading->SetName((ss.str()).c_str()) ; 
+  //  greffak4bjetleading->Write() ; 
 
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "hallpassing_" << myhltpath ; 
-    TGraphAsymmErrors* greffallpassing = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["hallpassing"], "cp") ;
-    ss.clear() ; 
-    ss.str("") ; 
-    ss << "eff_allpassing_" << myhltpath ;
-    greffallpassing->SetName((ss.str()).c_str()) ; 
-    greffallpassing->Write() ; 
-  }
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "hallpassing_" << myhltpath ; 
+  //  TGraphAsymmErrors* greffallpassing = fs->make<TGraphAsymmErrors>(h1_[ss.str()], h1_["hallpassing"], "cp") ;
+  //  ss.clear() ; 
+  //  ss.str("") ; 
+  //  ss << "eff_allpassing_" << myhltpath ;
+  //  greffallpassing->SetName((ss.str()).c_str()) ; 
+  //  greffallpassing->Write() ; 
+  //}
 
 }
 
